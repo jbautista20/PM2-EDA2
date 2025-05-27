@@ -5,7 +5,7 @@
 
 #define M 64  // Cantidad de baldes
 #define R 4   // Ranuras por balde
-#define ARCHIVO "vendedores.dat"    //nombre del archivo
+#define ARCHIVO "vendedores.dat"   //nombre del archivo
 
 // Estructura para un vendedor
 typedef struct {
