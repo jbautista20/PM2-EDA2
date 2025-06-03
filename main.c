@@ -44,6 +44,7 @@ void memorizarDesdeArchivo();
 void mostrarVendedor();
 void analisisCostos();
 void crearArchivoInicial();
+int Memorizacion_Previa();
 
 void menu() {
     int opcion, dni, pos;
@@ -80,24 +81,7 @@ void menu() {
                 altaEnDisco(vendedorAux);
                 break;
             case 2:
-                printf("\n-------BAJA DE VENDEDOR-------\n");
-                printf("Ingrese DNI del vendedor a eliminar: ");
-                scanf("%d", &dni);
-
-                vendedorAux = evocarEnDisco(dni);
-                if (vendedorAux.dni < 1) {
-                    printf("No se encontro el vendedor.\n");
-                    break;
-                }
-
-                int confirmacion;
-                printf("\nVENDEDOR ENCONTRADO CON EXITO\n");
-                mostrarVendedor(vendedorAux);
-                printf("Si desea eliminarlo presione 1: ");
-                scanf("%d", &confirmacion);
-                if(confirmacion==1){
-                    bajaEnDisco(vendedorAux.dni);
-                }
+                bajaEnDisco();
                 break;
             case 3:
                 printf("\n-------CONSULTAR VENDEDOR-------");
@@ -111,13 +95,13 @@ void menu() {
                 }
                 break;
             case 4:
-                //consultaBaldeContenedor();
+                consultaBaldeContenedor();
                 break;
             case 5:
                 mostrarEstructura();
                 break;
             case 6:
-                //memorizarDesdeArchivo();
+                Memorizacion_Previa();
                 break;
             case 7:
                 //analisisCostos();
@@ -139,13 +123,14 @@ int main(){
 
 // forzar sera 1 al llamar operaciones (para limpiar todo el RAL) y 0 al iniciar el main
 void crearArchivoInicial(int forzar) {
-    FILE *f = fopen(ARCHIVO, "r");
+    FILE *f = fopen(ARCHIVO, "rb");
     if (f && forzar == 0) {
         fclose(f);
-        return; // Ya existe, y no se sobreescribe
+        return; // Ya existe, y no se debe sobreescribir
     }
+    if (f) fclose(f);  // Si existe y forzar == 1, lo cerramos para reabrir en modo escritura
 
-    f = fopen(ARCHIVO, "w");
+    f = fopen(ARCHIVO, "wb");
     if (!f) {
         printf("Error al crear el archivo.\n");
         return;
@@ -154,13 +139,13 @@ void crearArchivoInicial(int forzar) {
     Vendedor vacio = {-1, "", "", 0.0, 0, ""};
 
     for (int i = 0; i < M * R; i++) {
-        fprintf(f, "%d\n\n\n%.2f\n%d\n\n", 
-                vacio.dni, vacio.valor, vacio.cantVendida);
+        fwrite(&vacio, sizeof(Vendedor), 1, f);
     }
 
     fclose(f);
-    printf("\n\033[34mRAL en disco creado correctamente.\033[0m\n");
+    printf("\n\033[34mRAL en disco creado correctamente (binario).\033[0m\n");
 }
+
 
 void mostrarVendedor(Vendedor v) {
     printf("  DNI: %d\n", v.dni);
@@ -171,36 +156,21 @@ void mostrarVendedor(Vendedor v) {
     printf("  Tipo Venta: %s\n", v.tipoVenta);
 }
 
-void limpiarSaltoDeLinea(char *str) {
-    str[strcspn(str, "\n")] = '\0';  // Reemplaza '\n' por '\0'
-}
-
 void mostrarEstructura() {
-    FILE *f = fopen(ARCHIVO, "r");
+    FILE *f = fopen(ARCHIVO, "rb");
     if (!f) {
         printf("No se pudo abrir el archivo.\n");
         return;
     }
-    rewind(f);
 
-    char buffer[100];
     Vendedor vendedor;
-    int ranura = 0;
 
     printf("\n========== ESTRUCTURA ==========\n");
 
     for (int b = 0; b < M; b++) {
         printf("\033[33mBalde %d:\033[0m\n", b);
         for (int r = 0; r < R; r++) {
-            if (fgets(buffer, sizeof(buffer), f) == NULL) break;
-            limpiarSaltoDeLinea(buffer);
-            vendedor.dni = atoi(buffer);
-
-            fgets(buffer, sizeof(buffer), f); limpiarSaltoDeLinea(buffer); strcpy(vendedor.nombre, buffer);
-            fgets(buffer, sizeof(buffer), f); limpiarSaltoDeLinea(buffer); strcpy(vendedor.telefono, buffer);
-            fgets(buffer, sizeof(buffer), f); limpiarSaltoDeLinea(buffer); vendedor.valor = atof(buffer);
-            fgets(buffer, sizeof(buffer), f); limpiarSaltoDeLinea(buffer); vendedor.cantVendida = atoi(buffer);
-            fgets(buffer, sizeof(buffer), f); limpiarSaltoDeLinea(buffer); strcpy(vendedor.tipoVenta, buffer);
+            if (fread(&vendedor, sizeof(Vendedor), 1, f) != 1) break;
 
             printf("\033[32mRanura %d:\033[0m", r);
 
@@ -221,50 +191,29 @@ void mostrarEstructura() {
     fclose(f);
 }
 
-// -------------------- LOCALIZAR ----------------------
-// Retorna: 1 si existe, 0 si no existe, -1 si lleno. Pos contiene posición (balde y ranura).
+// --LOCALIZAR--
+// Retorna: 1 si existe, 0 si no existe, -1 si está lleno. Devuelve también el balde leído.
 Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
-    FILE* f = fopen(ARCHIVO, "r");
-    Balde balde;
-    Posicion ret = {-1,-1};
+    FILE* f = fopen(ARCHIVO, "rb");
     if (!f) {
         *exito = -1;
-        return ret;
+        return (Posicion){-1, -1};
     }
 
     int h = hashing(dni);  // balde inicial
     int intentos = 0;
     int MAuxBalde = -1, MAuxRanura = -1;
+    Posicion ret = {-1, -1};
 
     while (intentos < M) {
-        int baldeActual = (h + intentos) % M;        
-        int lineaInicio = baldeActual * R * 6;
-        int lineaActual = 0;
-        char buffer[200];
-        Vendedor aux;
+        int baldeActual = (h + intentos) % M;
 
-        rewind(f);
-        // Saltar hasta inicio del balde
-        while (lineaActual < lineaInicio && fgets(buffer, sizeof(buffer), f)) {
-            lineaActual++;
-        }
+        fseek(f, sizeof(Balde) * baldeActual, SEEK_SET);
+        Balde balde;
+        fread(&balde, sizeof(Balde), 1, f);
 
-        // Leer balde completo
         for (int r = 0; r < R; r++) {
-            fgets(buffer, sizeof(buffer), f); sscanf(buffer, "%d", &aux.dni);
-            fgets(aux.nombre, sizeof(aux.nombre), f);
-            fgets(aux.telefono, sizeof(aux.telefono), f);
-            fgets(buffer, sizeof(buffer), f); sscanf(buffer, "%f", &aux.valor);
-            fgets(buffer, sizeof(buffer), f); sscanf(buffer, "%d", &aux.cantVendida);
-            fgets(aux.tipoVenta, sizeof(aux.tipoVenta), f);
-
-            aux.nombre[strcspn(aux.nombre, "\n")] = 0;
-            aux.telefono[strcspn(aux.telefono, "\n")] = 0;
-            aux.tipoVenta[strcspn(aux.tipoVenta, "\n")] = 0;
-
-            balde.ranuras[r] = aux;
-
-            printf("dni aux: %d\n",aux.dni);
+            Vendedor aux = balde.ranuras[r];
 
             if (aux.dni == dni) {
                 *exito = 1;
@@ -274,61 +223,59 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
                 fclose(f);
                 return ret;
             }
-            else if (aux.dni == -1) {   // celda virgen, detener localizar
-            // completar el resto del balde con datos vacíos
-            for (int k = r; k < R; k++) {
-                Vendedor vacio = {-1, "", "", 0.0, 0, ""};
-                balde.ranuras[k] = vacio;
-            }
-            *exito = 0;
-            *baldeOut = balde;
-            ret.posicionBalde = baldeActual;
-            ret.posicionRanura = r;
-            fclose(f);
-            return ret;
-            }
-            else if(aux.dni == 0 && MAuxBalde == -1) {    // ranura LIBRE                
-                    MAuxBalde = baldeActual;
-                    MAuxRanura = r;
+            else if (aux.dni == -1) {
+                // VIRGEN: si ya se había encontrado una LIBRE, usarla
+                fclose(f);
+                if (MAuxBalde != -1) {
+                    *exito = 0;
+                    ret.posicionBalde = MAuxBalde;
+                    ret.posicionRanura = MAuxRanura;
+
+                    f = fopen(ARCHIVO, "rb");
+                    fseek(f, sizeof(Balde) * MAuxBalde, SEEK_SET);
+                    fread(baldeOut, sizeof(Balde), 1, f);
+                    fclose(f);
+                    return ret;
+                } else {
+                    for (int k = r; k < R; k++) {
+                        Vendedor vacio = {-1, "", "", 0.0, 0, ""};
+                        balde.ranuras[k] = vacio;
+                    }
+                    *exito = 0;
                     *baldeOut = balde;
-                    // Nota: no retornamos de inmediato, seguimos viendo si ya existe
+                    ret.posicionBalde = baldeActual;
+                    ret.posicionRanura = r;
+                    return ret;
                 }
             }
+            else if (aux.dni == 0 && MAuxBalde == -1) {
+                MAuxBalde = baldeActual;
+                MAuxRanura = r;
+            }
+        }
 
-        // Si no se encontró en este balde, continuar al siguiente
         intentos++;
     }
 
     fclose(f);
 
-    if (MAuxBalde != -1) {  // se busco por toda la estructura y no esta, se retorna la primer LIBRE (si existe)
+    if (MAuxBalde != -1) {
         *exito = 0;
         ret.posicionBalde = MAuxBalde;
         ret.posicionRanura = MAuxRanura;
+
+        f = fopen(ARCHIVO, "rb");
+        fseek(f, sizeof(Balde) * MAuxBalde, SEEK_SET);
+        fread(baldeOut, sizeof(Balde), 1, f);
+        fclose(f);
         return ret;
     }
 
-    *exito = -1;    //no esta y no se puede insertar porque ya esta lleno el RAL.
-    return ret;
+    *exito = -1;
+    return ret;  // lleno
 }
 
-
-/* alta utiliza archivo temporal (CONSULTAR!!!)
-sin eso no logramos hacerlo andar debido a que:
-No se puede hacer un fseek() hasta la línea 234 fácilmente, porque las líneas tienen longitudes variables (telefono, nombre).
-Si escribimos encima y lo nuevo ocupa más o menos espacio que lo anterior, se corrompe todo el contenido posterior.
-
--Se abre el archivo original RAL en modo lectura.
--Se crea un archivo temporal (temp.txt) en modo escritura.
-Se copia línea por línea del original al temporal:
--Cuando se llega a la posición que debe modificarse (por ejemplo, un alta o baja), se escribe la nueva versión del dato.
--En las demás posiciones, se copia tal cual lo leído del archivo original.
-Una vez copiado todo el archivo:
--Se cierra ambos archivos.
--Se borra el archivo original.
--Se renombra el archivo temporal como archivo principal (rename("temp.txt", RAL)).
-
-*/
+// -- ALTA --
 int altaEnDisco(Vendedor nuevo) {
     Balde balde;
     int resultado;
@@ -338,163 +285,139 @@ int altaEnDisco(Vendedor nuevo) {
 
     balde.ranuras[pos.posicionRanura] = nuevo;
 
-    FILE* fOriginal = fopen(ARCHIVO, "r");
-    FILE* fTemp = fopen("temp.txt", "w");
-    if (!fOriginal || !fTemp) return 0;
+    FILE* f = fopen(ARCHIVO, "rb+");
+    if (!f) return 0;
 
-    rewind(fOriginal);
-    char buffer[200];
+    fseek(f, sizeof(Balde) * pos.posicionBalde, SEEK_SET);
+    fwrite(&balde, sizeof(Balde), 1, f);
 
-    for (int b = 0; b < M; b++) {
-        for (int r = 0; r < R; r++) {
-            Vendedor v;
-
-            if (b == pos.posicionBalde && r == pos.posicionRanura) {
-                // Modifico la ranura
-                v = nuevo;
-            } else {
-                // Copio el archivo original
-                fgets(buffer, sizeof(buffer), fOriginal); sscanf(buffer, "%d", &v.dni);
-                fgets(v.nombre, sizeof(v.nombre), fOriginal);
-                fgets(v.telefono, sizeof(v.telefono), fOriginal);
-                fgets(buffer, sizeof(buffer), fOriginal); sscanf(buffer, "%f", &v.valor);
-                fgets(buffer, sizeof(buffer), fOriginal); sscanf(buffer, "%d", &v.cantVendida);
-                fgets(v.tipoVenta, sizeof(v.tipoVenta), fOriginal);
-
-                // limpieza de \n
-                v.nombre[strcspn(v.nombre, "\n")] = 0;
-                v.telefono[strcspn(v.telefono, "\n")] = 0;
-                v.tipoVenta[strcspn(v.tipoVenta, "\n")] = 0;
-            }
-
-            // Escribo al archivo temporal
-            fprintf(fTemp, "%d\n%s\n%s\n%.2f\n%d\n%s\n",
-                v.dni,
-                v.nombre,
-                v.telefono,
-                v.valor,
-                v.cantVendida,
-                v.tipoVenta);
-        }
-    }
-
-    fclose(fOriginal);
-    fclose(fTemp);
-    remove(ARCHIVO);
-    rename("temp.txt", ARCHIVO);
-
+    fclose(f);
     return 1;
 }
 
-// -------------------- BAJA ----------------------
-int bajaEnDisco(int dni) {
+int bajaEnDisco() {
+    int dni;
+    printf("\n-------BAJA DE VENDEDOR-------\n");
+    printf("Ingrese DNI del vendedor a eliminar: ");
+    scanf("%d", &dni);
+
     Balde balde;
     int resultado;
     Posicion pos = localizarEnDisco(dni, &resultado, &balde);
 
-    if (resultado != 1) return 0; // No encontrado
-
-    // Reemplazar con ranura vacía
-    Vendedor vacio = {0, "", "", 0.0, 0, ""};
-    balde.ranuras[pos.posicionRanura] = vacio;
-
-    FILE* fOriginal = fopen(ARCHIVO, "r");
-    FILE* fTemp = fopen("temp.txt", "w");
-    if (!fOriginal || !fTemp) return 0;
-
-    char buffer[200];
-
-    for (int b = 0; b < M; b++) {
-        for (int r = 0; r < R; r++) {
-            Vendedor v;
-            if (b == pos.posicionBalde) {
-                v = balde.ranuras[r];  // del balde ya modificado
-            } else {
-                // Leer desde archivo original
-                fgets(buffer, sizeof(buffer), fOriginal); sscanf(buffer, "%d", &v.dni);
-                fgets(v.nombre, sizeof(v.nombre), fOriginal);
-                fgets(v.telefono, sizeof(v.telefono), fOriginal);
-                fgets(buffer, sizeof(buffer), fOriginal); sscanf(buffer, "%f", &v.valor);
-                fgets(buffer, sizeof(buffer), fOriginal); sscanf(buffer, "%d", &v.cantVendida);
-                fgets(v.tipoVenta, sizeof(v.tipoVenta), fOriginal);
-                v.nombre[strcspn(v.nombre, "\n")] = 0;
-                v.telefono[strcspn(v.telefono, "\n")] = 0;
-                v.tipoVenta[strcspn(v.tipoVenta, "\n")] = 0;
-            }
-
-            // Escribir al archivo temporal
-            fprintf(fTemp, "%d\n%s\n%s\n%.2f\n%d\n%s\n",
-                v.dni,
-                v.nombre,
-                v.telefono,
-                v.valor,
-                v.cantVendida,
-                v.tipoVenta);
-        }
+    if (resultado != 1) {
+        printf("No se encontro el vendedor.\n");
+        return 0;
     }
 
-    fclose(fOriginal);
-    fclose(fTemp);
-    remove(ARCHIVO);
-    rename("temp.txt", ARCHIVO);
+    Vendedor v = balde.ranuras[pos.posicionRanura];
+    printf("\nVENDEDOR ENCONTRADO CON EXITO\n");
+    mostrarVendedor(v);
+
+    int confirmacion;
+    printf("Si desea eliminarlo presione 1: ");
+    scanf("%d", &confirmacion);
+    if (confirmacion != 1) return 0;
+
+    // Realizar baja
+    v.dni = 0;
+    strcpy(v.nombre, "");
+    strcpy(v.telefono, "");
+    strcpy(v.tipoVenta, "");
+    v.valor = 0;
+    v.cantVendida = 0;
+    balde.ranuras[pos.posicionRanura] = v;
+
+    // Reescribir balde en disco
+    FILE *f = fopen(ARCHIVO, "rb+");
+    if (!f) return 0;
+
+    fseek(f, sizeof(Balde) * pos.posicionBalde, SEEK_SET);
+    fwrite(&balde, sizeof(Balde), 1, f);
+    fclose(f);
+
+    printf("\nVendedor eliminado correctamente.\n");
     return 1;
 }
 
+void consultaBaldeContenedor() {
+    int dni;
+    printf("Ingrese el DNI del vendedor a consultar: ");
+    scanf("%d", &dni);
+
+    Balde balde;
+    int exito;
+    Posicion pos = localizarEnDisco(dni, &exito, &balde);
+
+    if (exito != 1) {
+        printf("\n\033[31mEl vendedor no fue encontrado en la estructura.\033[0m\n");
+        return;
+    }
+
+    printf("\n\033[34mEl vendedor se encuentra en el balde #%d\033[0m\n", pos.posicionBalde);
+    printf("\033[33mContenido del balde:\033[0m\n");
+
+    for (int r = 0; r < R; r++) {
+        Vendedor v = balde.ranuras[r];
+        printf("\033[32mRanura %d:\033[0m", r);
+
+        if (v.dni == -1 &&
+            strlen(v.nombre) == 0 && strlen(v.telefono) == 0 && 
+            v.valor == 0.0 && v.cantVendida == 0 && strlen(v.tipoVenta) == 0) {
+            printf("  Estado: VIRGEN\n");
+        }
+        else if (v.dni == 0) {
+            printf("  Estado: LIBRE\n");
+        }
+        else {
+            printf("  Estado: OCUPADA\n");
+            printf("  DNI: %d\n  Nombre: %s\n  Telefono: %s\n", v.dni, v.nombre, v.telefono);
+            printf("  Valor: %.2f\n  Cantidad Vendida: %d\n  Tipo Venta: %s\n", 
+                    v.valor, v.cantVendida, v.tipoVenta);
+        }
+        printf("\n");
+    }
+}
+
+
 // ---EVOCAR---
 Vendedor evocarEnDisco(int dniBuscado) {
-    Vendedor v = {-1, "", "", 0.0, 0, ""};  // inicializado para retornar si no se encuentra
-    FILE *f = fopen(ARCHIVO, "r");
-    if (!f) {
-        printf("No se pudo abrir el archivo.\n");
-        return v;
+    Vendedor vacio = {-1, "", "", 0.0, 0, ""};
+    Balde balde;
+    int exito;
+    Posicion pos = localizarEnDisco(dniBuscado, &exito, &balde);
+
+    if (exito == 1) {
+        return balde.ranuras[pos.posicionRanura];
+    } else {
+        return vacio; // no encontrado
     }
-    rewind(f);
+}
 
-    int pos = hashing(dniBuscado);
-    int intentos = 0;
-    int dni;
-    char nombre[51], telefono[16], tipoVenta[21];
-    float valor;
-    int cantVendida;
-
-    // Empieza desde la posición hasheada y recorre en rebalse abierto lineal
-    while (intentos < M * R) {
-        int balde = pos / R;
-        int ranura = pos % R;
-
-        // saltar a la posición correspondiente
-        rewind(f);
-        for (int i = 0; i < pos; i++) {
-            // descartar las 6 líneas del vendedor anterior
-            fscanf(f, "%*[^\n]\n%*[^\n]\n%*[^\n]\n%*[^\n]\n%*[^\n]\n%*[^\n]\n");
-        }
-
-        // leer datos del vendedor actual
-        if (fscanf(f, "%d\n", &dni) != 1) break;
-        fgets(nombre, sizeof(nombre), f); nombre[strcspn(nombre, "\n")] = '\0';
-        fgets(telefono, sizeof(telefono), f); telefono[strcspn(telefono, "\n")] = '\0';
-        fscanf(f, "%f\n", &valor);
-        fscanf(f, "%d\n", &cantVendida);
-        fgets(tipoVenta, sizeof(tipoVenta), f); tipoVenta[strcspn(tipoVenta, "\n")] = '\0';
-
-        if (dni == dniBuscado) {
-            // encontrado
-            strcpy(v.nombre, nombre);
-            strcpy(v.telefono, telefono);
-            strcpy(v.tipoVenta, tipoVenta);
-            v.dni = dni;
-            v.valor = valor;
-            v.cantVendida = cantVendida;
-            fclose(f);
-            return v;
-        }
-
-        pos = (pos + 1) % (M * R);
-        intentos++;
+int Memorizacion_Previa() {
+    FILE *fp = fopen("Vendedores.txt", "r");
+    if (fp == NULL) {
+        printf("No se pudo abrir Vendedores.txt\n");
+        return 0;
     }
 
-    fclose(f);
-    return v;  // no encontrado
+    Vendedor aux;
+    while (!feof(fp)) {
+        if (fscanf(fp, "%d\n", &aux.dni) != 1) break;
+        fgets(aux.nombre, sizeof(aux.nombre), fp); aux.nombre[strcspn(aux.nombre, "\n")] = 0;
+        fgets(aux.telefono, sizeof(aux.telefono), fp); aux.telefono[strcspn(aux.telefono, "\n")] = 0;
+        fscanf(fp, "%f\n", &aux.valor);
+        fscanf(fp, "%d\n", &aux.cantVendida);
+        fgets(aux.tipoVenta, sizeof(aux.tipoVenta), fp); aux.tipoVenta[strcspn(aux.tipoVenta, "\n")] = 0;
+
+        // Insertar en el archivo binario usando altaEnDisco
+        if (!altaEnDisco(aux)) {
+            printf("No se pudo insertar al vendedor con DNI %d (ya existente o estructura llena).\n", aux.dni);
+        }
+    }
+
+    fclose(fp);
+    return 1;
 }
 
 
