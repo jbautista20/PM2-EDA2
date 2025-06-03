@@ -12,6 +12,15 @@
 #define A_VENDEDORES "Vendedores.txt"  //archivo con vendedores
 #define A_OPERACIONES "Operaciones.txt" //archivo con operaciones
 
+// Estructura para costos
+typedef struct 
+{
+    int cantidad;
+    int maximo;
+    int temp;
+    int sumatoria;
+}Costos;
+
 // Estructura para un vendedor
 typedef struct {
     int dni;
@@ -36,6 +45,7 @@ typedef struct {
 int hashing();
 int altaEnDisco();
 int bajaEnDisco();
+int bajaEnDiscoManual();
 Vendedor evocarEnDisco();
 void convertirTxtABinario();
 void consultaBaldeContenedor();
@@ -45,6 +55,19 @@ void mostrarVendedor();
 void analisisCostos();
 void crearArchivoInicial();
 int Memorizacion_Previa();
+void cuadroComp();
+int compararVendedor();
+
+Costos baldeAlta = {0,0,0,0};
+Costos baldeBaja = {0,0,0,0};
+Costos baldeEvoc = {0,0,0,0};
+Costos baldeEvocNE = {0,0,0,0};
+Costos ranuraAlta = {0,0,0,0};
+Costos ranuraBaja = {0,0,0,0};
+Costos ranuraEvoc = {0,0,0,0};
+Costos ranuraEvocNE = {0,0,0,0};
+int costoBaldeAux = 0;
+int costoRanuraAux = 0;
 
 void menu() {
     int opcion, dni, pos;
@@ -81,7 +104,7 @@ void menu() {
                 altaEnDisco(vendedorAux);
                 break;
             case 2:
-                bajaEnDisco();
+                bajaEnDiscoManual();
                 break;
             case 3:
                 printf("\n-------CONSULTAR VENDEDOR-------");
@@ -104,7 +127,7 @@ void menu() {
                 Memorizacion_Previa();
                 break;
             case 7:
-                //analisisCostos();
+                analisisCostos();
                 break;
             case 0:
                 printf("Saliendo del programa...\n");
@@ -200,6 +223,19 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
         return (Posicion){-1, -1};
     }
 
+    //inicializo contadores temporales de costos en 0
+    baldeAlta.temp = 0;
+    baldeBaja.temp = 0;
+    baldeEvoc.temp = 0;
+    baldeEvocNE.temp = 0;
+    ranuraAlta.temp = 0;
+    ranuraBaja.temp = 0;
+    ranuraEvoc.temp = 0;
+    ranuraEvocNE.temp = 0;  
+
+    costoBaldeAux = 0;
+    costoRanuraAux = 0; 
+
     int h = hashing(dni);  // balde inicial
     int intentos = 0;
     int MAuxBalde = -1, MAuxRanura = -1;
@@ -208,12 +244,16 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
     while (intentos < M) {
         int baldeActual = (h + intentos) % M;
 
+        costoBaldeAux++;
+
         fseek(f, sizeof(Balde) * baldeActual, SEEK_SET);
         Balde balde;
         fread(&balde, sizeof(Balde), 1, f);
 
         for (int r = 0; r < R; r++) {
             Vendedor aux = balde.ranuras[r];
+
+            costoRanuraAux++;
 
             if (aux.dni == dni) {
                 *exito = 1;
@@ -281,6 +321,20 @@ int altaEnDisco(Vendedor nuevo) {
     int resultado;
     Posicion pos = localizarEnDisco(nuevo.dni, &resultado, &balde);
 
+    baldeAlta.temp = costoBaldeAux;
+    if (baldeAlta.temp < baldeAlta.maximo){
+        baldeAlta.maximo = baldeAlta.temp;
+    }
+    baldeAlta.sumatoria += baldeAlta.temp;
+    baldeAlta.cantidad++;
+
+    ranuraAlta.temp = costoRanuraAux;
+    if (ranuraAlta.temp < ranuraAlta.maximo){
+        ranuraAlta.maximo = ranuraAlta.temp;
+    }
+    ranuraAlta.sumatoria += ranuraAlta.temp;
+    ranuraAlta.cantidad++;
+
     if (resultado != 0) return 0;  // ya existe o estructura llena
 
     balde.ranuras[pos.posicionRanura] = nuevo;
@@ -295,7 +349,7 @@ int altaEnDisco(Vendedor nuevo) {
     return 1;
 }
 
-int bajaEnDisco() {
+int bajaEnDiscoManual() {
     int dni;
     printf("\n-------BAJA DE VENDEDOR-------\n");
     printf("Ingrese DNI del vendedor a eliminar: ");
@@ -340,6 +394,67 @@ int bajaEnDisco() {
     return 1;
 }
 
+int compararVendedor(Vendedor v, Vendedor v2){
+    if ( (strcasecmp(v.nombre, v2.nombre) == 0) && v.dni == v2.dni && (strcasecmp(v.tipoVenta, v2.tipoVenta) == 0) && (strcasecmp(v.telefono, v2.telefono) == 0)
+&& v.cantVendida == v2.cantVendida && v.valor == v2.valor)
+    {
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+int bajaEnDisco(Vendedor v2){
+    Balde balde;
+    int resultado;
+    Posicion pos = localizarEnDisco(v2.dni, &resultado, &balde);
+
+    baldeBaja.temp = costoBaldeAux;
+    if (baldeBaja.temp < baldeBaja.maximo){
+        baldeBaja.maximo = baldeBaja.temp;
+    }
+    baldeBaja.sumatoria += baldeBaja.temp;
+    baldeBaja.cantidad++;
+
+    ranuraBaja.temp = costoRanuraAux;
+    if (ranuraBaja.temp < ranuraBaja.maximo){
+        ranuraBaja.maximo = ranuraBaja.temp;
+    }
+    ranuraBaja.sumatoria += ranuraBaja.temp;
+    ranuraBaja.cantidad++;
+
+    if (resultado != 1) {
+        return 0;
+    }
+
+    Vendedor v = balde.ranuras[pos.posicionRanura];
+
+    int confirmacion = compararVendedor(v,v2);
+    if (confirmacion != 1) {
+        return 0;
+    }
+
+    // Realizar baja
+    v.dni = 0;
+    strcpy(v.nombre, "");
+    strcpy(v.telefono, "");
+    strcpy(v.tipoVenta, "");
+    v.valor = 0;
+    v.cantVendida = 0;
+    balde.ranuras[pos.posicionRanura] = v;
+
+    // Reescribir balde en disco
+    FILE *f = fopen(ARCHIVO, "rb+");
+    if (!f) return 0;
+
+    fseek(f, sizeof(Balde) * pos.posicionBalde, SEEK_SET);
+    fwrite(&balde, sizeof(Balde), 1, f);
+    fclose(f);
+    return 1;
+}
+
 void consultaBaldeContenedor() {
     int dni;
     printf("Ingrese el DNI del vendedor a consultar: ");
@@ -379,17 +494,46 @@ void consultaBaldeContenedor() {
     }
 }
 
-
 // ---EVOCAR---
 Vendedor evocarEnDisco(int dniBuscado) {
     Vendedor vacio = {-1, "", "", 0.0, 0, ""};
     Balde balde;
     int exito;
-    Posicion pos = localizarEnDisco(dniBuscado, &exito, &balde);
+    Posicion pos = localizarEnDisco(dniBuscado, &exito, &balde);    
 
     if (exito == 1) {
+
+        baldeEvoc.temp = costoBaldeAux;
+        if (baldeEvoc.temp < baldeEvoc.maximo){
+            baldeEvoc.maximo = baldeEvoc.temp;
+        }
+        baldeEvoc.sumatoria += baldeEvoc.temp;
+        baldeEvoc.cantidad++;
+
+        ranuraEvoc.temp = costoRanuraAux;
+        if (ranuraEvoc.temp < ranuraEvoc.maximo){
+            ranuraEvoc.maximo = ranuraEvoc.temp;
+        }
+        ranuraEvoc.sumatoria += ranuraEvoc.temp;
+        ranuraEvoc.cantidad++;
+
         return balde.ranuras[pos.posicionRanura];
     } else {
+
+        baldeEvocNE.temp = costoBaldeAux;
+        if (baldeEvocNE.temp < baldeEvocNE.maximo){
+            baldeEvocNE.maximo = baldeEvocNE.temp;
+        }
+        baldeEvocNE.sumatoria += baldeEvocNE.temp;
+        baldeEvocNE.cantidad++;
+
+        ranuraEvocNE.temp = costoRanuraAux;
+        if (ranuraEvocNE.temp < ranuraEvocNE.maximo){
+            ranuraEvocNE.maximo = ranuraEvocNE.temp;
+        }
+        ranuraEvocNE.sumatoria += ranuraEvocNE.temp;
+        ranuraEvocNE.cantidad++;
+
         return vacio; // no encontrado
     }
 }
@@ -418,6 +562,92 @@ int Memorizacion_Previa() {
 
     fclose(fp);
     return 1;
+}
+
+void cuadroComp()
+{
+
+    system("cls");
+    system("color 03");
+    printf("##============================================================ ##\n");
+    printf("##    OPERACIONES      |BALDES CONSULTADOS|RANURAS CONSULTADAS ##\n");
+    printf("##============================================================ ##\n");
+    printf("|| MAX. ALTA           |     %.3f      |     %.3f     ##\n", (float)baldeAlta.maximo, (float)ranuraAlta.maximo);
+    printf("|| MED. ALTA           |     %.3f      |     %.3f     ##\n",
+           (baldeAlta.cantidad != 0) ? baldeAlta.sumatoria/baldeAlta.cantidad : 0.0,
+           (ranuraAlta.cantidad != 0) ? ranuraAlta.sumatoria/ranuraAlta.cantidad : 0.0);
+    printf("|| MAX. BAJA           |     %.3f      |     %.3f     ##\n", baldeBaja.maximo,ranuraBaja.maximo);
+    printf("|| MED. BAJA           |     %.3f      |     %.3f     ##\n",
+           (baldeBaja.cantidad != 0) ? baldeBaja.sumatoria/baldeBaja.cantidad : 0.0,
+           (ranuraBaja.cantidad != 0) ? ranuraBaja.sumatoria / ranuraBaja.cantidad : 0.0);
+    printf("|| MAX. EVOC EXITOSA   |     %.3f      |     %.3f     ##\n", baldeEvoc.maximo,ranuraEvoc.maximo);
+    printf("|| MED. EVOC EXITOSA   |     %.3f      |     %.3f     ##\n",
+           (baldeEvoc.cantidad != 0) ? baldeEvoc.sumatoria / baldeEvoc.cantidad : 0.0,
+           (ranuraEvoc.cantidad != 0) ? ranuraEvoc.sumatoria / ranuraEvoc.cantidad : 0.0);
+    printf("|| MAX. EVOC NO EXITOSA|     %.3f      |     %.3f     ##\n",baldeEvocNE.maximo, ranuraEvocNE.maximo);
+    printf("|| MED. EVOC NO EXITOSA|     %.3f      |     %.3f     ##\n",
+           (baldeEvocNE.cantidad != 0) ? baldeEvocNE.sumatoria / baldeEvocNE.cantidad : 0.0,
+           (ranuraEvocNE.cantidad != 0) ? ranuraEvocNE.sumatoria / ranuraEvocNE.cantidad : 0.0);
+    printf("##============================================================##\n");
+    system("pause");
+}
+
+void analisisCostos() {
+    crearArchivoInicial(1);
+    
+    Costos baldeAlta = {0,0,0,0};
+    Costos baldeBaja = {0,0,0,0};
+    Costos baldeEvoc = {0,0,0,0};
+    Costos baldeEvocNE = {0,0,0,0};
+    Costos ranuraAlta = {0,0,0,0};
+    Costos ranuraBaja = {0,0,0,0};
+    Costos ranuraEvoc = {0,0,0,0};
+    Costos ranuraEvocNE = {0,0,0,0};
+
+    FILE* fp = fopen(A_OPERACIONES, "r");
+    if (!fp) {
+        printf("No se pudo abrir el archivo operaciones.txt.\n");
+        return;
+    }
+
+    int cod, dni, cant;
+    float valor;
+    char nombre[51], tel[16], tipoVenta[21];
+    Vendedor vAux;
+
+    while (!feof(fp)) {
+        fscanf(fp, "%d", &cod);
+        if (cod == 1 || cod == 2) {
+            fscanf(fp, "%d\n", &vAux.dni);
+            fgets(nombre, sizeof(nombre), fp); nombre[strcspn(nombre, "\n")] = 0;
+            fgets(tel, sizeof(tel), fp);       tel[strcspn(tel, "\n")] = 0;
+            fscanf(fp, "%f\n", &valor);
+            fscanf(fp, "%d\n", &cant);
+            fgets(tipoVenta, sizeof(tipoVenta), fp); tipoVenta[strcspn(tipoVenta, "\n")] = 0;
+
+            strcpy(vAux.nombre, nombre);
+            strcpy(vAux.telefono, tel);
+            strcpy(vAux.tipoVenta, tipoVenta);
+            vAux.valor = valor;
+            vAux.cantVendida = cant;
+
+            if (cod == 1){
+                altaEnDisco(vAux);
+            } else {
+                bajaEnDisco(vAux);
+            }
+        } else if (cod == 3) {
+            fscanf(fp, "%d\n", dni);
+            evocarEnDisco(dni);
+        } else {
+            printf("Codigo de operacion no valido: %d\n", cod);
+            break;
+        }
+    }
+    fclose(fp);
+    printf("Operaciones.txt leido con exito.\n");
+    system("pause");
+    cuadroComp();
 }
 
 
