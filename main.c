@@ -155,7 +155,7 @@ void crearArchivoInicial(int forzar) {
         fclose(f);
         return; // Ya existe, y no se debe sobreescribir
     }
-    if (f) fclose(f);  // Si existe y forzar == 1, lo cerramos para reabrir en modo escritura
+    if (f) fclose(f);  // Si existe y se fuerza, cerrarlo
 
     f = fopen(ARCHIVO, "wb");
     if (!f) {
@@ -163,14 +163,23 @@ void crearArchivoInicial(int forzar) {
         return;
     }
 
+    Balde baldeVacio;
     Vendedor vacio = {-1, "", "", 0.0, 0, ""};
+    for (int i = 0; i < R; i++) {
+        baldeVacio.ranuras[i] = vacio;
+    }
 
-    for (int i = 0; i < M * R; i++) {
-        fwrite(&vacio, sizeof(Vendedor), 1, f);
+    // escribir los M baldes
+    for (int i = 0; i < M; i++) {
+        fwrite(&baldeVacio, sizeof(Balde), 1, f);
+
+        // 40 bytes como relleno (DESPERDICIO)
+        char relleno[40] = {0};
+        fwrite(relleno, sizeof(char), 40, f);
     }
 
     fclose(f);
-    printf("\n\033[34mRAL en disco creado correctamente (binario).\033[0m\n");
+    printf("\n\033[34mRAL en disco creado correctamente.\033[0m\n");
 }
 
 void mostrarVendedor(Vendedor v) {
@@ -189,25 +198,28 @@ void mostrarEstructura() {
         return;
     }
 
-    Vendedor vendedor;
+    Balde balde;
 
     printf("\n========== ESTRUCTURA ==========\n");
 
     for (int b = 0; b < M; b++) {
+        fseek(f, b * (sizeof(Balde) + 40), SEEK_SET);  // saltar al balde actual
+
+        if (fread(&balde, sizeof(Balde), 1, f) != 1) break;
+
         printf("\033[33mBalde %d:\033[0m\n", b);
         for (int r = 0; r < R; r++) {
-            if (fread(&vendedor, sizeof(Vendedor), 1, f) != 1) break;
+            Vendedor v = balde.ranuras[r];
 
             printf("\033[32mRanura %d:\033[0m", r);
-
-            if (vendedor.dni == -1 && strlen(vendedor.nombre) == 0 && strlen(vendedor.telefono) == 0 && 
-                strlen(vendedor.tipoVenta) == 0 && vendedor.valor == 0 && vendedor.cantVendida == 0) {
+            if (v.dni == -1 && strlen(v.nombre) == 0 && strlen(v.telefono) == 0 &&
+                strlen(v.tipoVenta) == 0 && v.valor == 0 && v.cantVendida == 0) {
                 printf("  Estado: VIRGEN\n");
-            } else if (vendedor.dni == 0) {
+            } else if (v.dni == 0) {
                 printf("  Estado: LIBRE\n");
             } else {
                 printf("  Estado: OCUPADA\n");
-                mostrarVendedor(vendedor);
+                mostrarVendedor(v);
             }
             printf("\n");
         }
@@ -226,36 +238,27 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
         return (Posicion){-1, -1};
     }
 
-    //inicializo contadores temporales de costos en 0
-    baldeAlta.temp = 0;
-    baldeBaja.temp = 0;
-    baldeEvoc.temp = 0;
-    baldeEvocNE.temp = 0;
-    ranuraAlta.temp = 0;
-    ranuraBaja.temp = 0;
-    ranuraEvoc.temp = 0;
-    ranuraEvocNE.temp = 0;  
+    baldeAlta.temp = baldeBaja.temp = baldeEvoc.temp = baldeEvocNE.temp = 0;
+    ranuraAlta.temp = ranuraBaja.temp = ranuraEvoc.temp = ranuraEvocNE.temp = 0;
+    costoBaldeAux = costoRanuraAux = 0;
 
-    costoBaldeAux = 0;
-    costoRanuraAux = 0; 
-
-    int h = hashing(dni);  // balde inicial
+    int h = hashing(dni);
     int intentos = 0;
     int MAuxBalde = -1, MAuxRanura = -1;
+    int hayBaldeLibre = 0;
+    Balde baldeLibre;
     Posicion ret = {-1, -1};
 
     while (intentos < M) {
         int baldeActual = (h + intentos) % M;
-
         costoBaldeAux++;
 
-        fseek(f, sizeof(Balde) * baldeActual, SEEK_SET);
+        fseek(f, baldeActual * (sizeof(Balde) + 40), SEEK_SET);
         Balde balde;
         fread(&balde, sizeof(Balde), 1, f);
 
         for (int r = 0; r < R; r++) {
             Vendedor aux = balde.ranuras[r];
-
             costoRanuraAux++;
 
             if (aux.dni == dni) {
@@ -265,31 +268,26 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
                 ret.posicionRanura = r;
                 fclose(f);
                 return ret;
-            }
-            else if (aux.dni == -1) {
-                // VIRGEN: si ya se había encontrado una LIBRE, usarla
+            } else if (aux.dni == -1) {
                 fclose(f);
-                if (MAuxBalde != -1) {
+                if (hayBaldeLibre) {
                     *exito = 0;
+                    *baldeOut = baldeLibre;
                     ret.posicionBalde = MAuxBalde;
                     ret.posicionRanura = MAuxRanura;
-
-                    f = fopen(ARCHIVO, "rb");
-                    fseek(f, sizeof(Balde) * MAuxBalde, SEEK_SET);
-                    fread(baldeOut, sizeof(Balde), 1, f);
-                    fclose(f);
                     return ret;
-                } else {                    
+                } else {
                     *exito = 0;
                     *baldeOut = balde;
                     ret.posicionBalde = baldeActual;
                     ret.posicionRanura = r;
                     return ret;
                 }
-            }
-            else if (aux.dni == 0 && MAuxBalde == -1) {
+            } else if (aux.dni == 0 && !hayBaldeLibre) {
                 MAuxBalde = baldeActual;
                 MAuxRanura = r;
+                baldeLibre = balde;
+                hayBaldeLibre = 1;
             }
         }
 
@@ -298,21 +296,18 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
 
     fclose(f);
 
-    if (MAuxBalde != -1) {
+    if (hayBaldeLibre) {
         *exito = 0;
+        *baldeOut = baldeLibre;
         ret.posicionBalde = MAuxBalde;
         ret.posicionRanura = MAuxRanura;
-
-        f = fopen(ARCHIVO, "rb");
-        fseek(f, sizeof(Balde) * MAuxBalde, SEEK_SET);
-        fread(baldeOut, sizeof(Balde), 1, f);
-        fclose(f);
         return ret;
     }
 
     *exito = -1;
-    return ret;  // lleno
+    return ret;
 }
+
 
 // -- ALTA --
 int altaEnDisco(Vendedor nuevo) {
@@ -341,7 +336,7 @@ int altaEnDisco(Vendedor nuevo) {
     FILE* f = fopen(ARCHIVO, "rb+");
     if (!f) return 0;
 
-    fseek(f, sizeof(Balde) * pos.posicionBalde, SEEK_SET);
+    fseek(f, (sizeof(Balde) + 40) * pos.posicionBalde, SEEK_SET);
     fwrite(&balde, sizeof(Balde), 1, f);
 
     fclose(f);
@@ -401,7 +396,7 @@ int bajaEnDisco(Vendedor v2, int bajaManual) {
     FILE *f = fopen(ARCHIVO, "rb+");
     if (!f) return 0;
 
-    fseek(f, sizeof(Balde) * pos.posicionBalde, SEEK_SET);
+    fseek(f, (sizeof(Balde) + 40) * pos.posicionBalde, SEEK_SET);
     fwrite(&balde, sizeof(Balde), 1, f);
     fclose(f);
 
