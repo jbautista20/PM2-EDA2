@@ -104,7 +104,11 @@ void menu() {
                 altaEnDisco(vendedorAux);
                 break;
             case 2:
-                bajaEnDiscoManual();
+                printf("\n-------BAJA DE VENDEDOR-------\n");
+                printf("Ingrese DNI del vendedor a eliminar: ");
+                scanf("%d", &dni);
+                vendedorAux.dni = dni;
+                bajaEnDisco(vendedorAux,1);
                 break;
             case 3:
                 printf("\n-------CONSULTAR VENDEDOR-------");
@@ -168,7 +172,6 @@ void crearArchivoInicial(int forzar) {
     fclose(f);
     printf("\n\033[34mRAL en disco creado correctamente (binario).\033[0m\n");
 }
-
 
 void mostrarVendedor(Vendedor v) {
     printf("  DNI: %d\n", v.dni);
@@ -276,11 +279,7 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
                     fread(baldeOut, sizeof(Balde), 1, f);
                     fclose(f);
                     return ret;
-                } else {
-                    for (int k = r; k < R; k++) {
-                        Vendedor vacio = {-1, "", "", 0.0, 0, ""};
-                        balde.ranuras[k] = vacio;
-                    }
+                } else {                    
                     *exito = 0;
                     *baldeOut = balde;
                     ret.posicionBalde = baldeActual;
@@ -349,51 +348,6 @@ int altaEnDisco(Vendedor nuevo) {
     return 1;
 }
 
-int bajaEnDiscoManual() {
-    int dni;
-    printf("\n-------BAJA DE VENDEDOR-------\n");
-    printf("Ingrese DNI del vendedor a eliminar: ");
-    scanf("%d", &dni);
-
-    Balde balde;
-    int resultado;
-    Posicion pos = localizarEnDisco(dni, &resultado, &balde);
-
-    if (resultado != 1) {
-        printf("No se encontro el vendedor.\n");
-        return 0;
-    }
-
-    Vendedor v = balde.ranuras[pos.posicionRanura];
-    printf("\nVENDEDOR ENCONTRADO CON EXITO\n");
-    mostrarVendedor(v);
-
-    int confirmacion;
-    printf("Si desea eliminarlo presione 1: ");
-    scanf("%d", &confirmacion);
-    if (confirmacion != 1) return 0;
-
-    // Realizar baja
-    v.dni = 0;
-    strcpy(v.nombre, "");
-    strcpy(v.telefono, "");
-    strcpy(v.tipoVenta, "");
-    v.valor = 0;
-    v.cantVendida = 0;
-    balde.ranuras[pos.posicionRanura] = v;
-
-    // Reescribir balde en disco
-    FILE *f = fopen(ARCHIVO, "rb+");
-    if (!f) return 0;
-
-    fseek(f, sizeof(Balde) * pos.posicionBalde, SEEK_SET);
-    fwrite(&balde, sizeof(Balde), 1, f);
-    fclose(f);
-
-    printf("\nVendedor eliminado correctamente.\n");
-    return 1;
-}
-
 int compararVendedor(Vendedor v, Vendedor v2){
     if ( (strcasecmp(v.nombre, v2.nombre) == 0) && v.dni == v2.dni && (strcasecmp(v.tipoVenta, v2.tipoVenta) == 0) && (strcasecmp(v.telefono, v2.telefono) == 0)
 && v.cantVendida == v2.cantVendida && v.valor == v2.valor)
@@ -406,54 +360,55 @@ int compararVendedor(Vendedor v, Vendedor v2){
     }
 }
 
-int bajaEnDisco(Vendedor v2){
+int bajaEnDisco(Vendedor v2, int bajaManual) {
     Balde balde;
     int resultado;
     Posicion pos = localizarEnDisco(v2.dni, &resultado, &balde);
 
+    // Costos (si aplica)
     baldeBaja.temp = costoBaldeAux;
-    if (baldeBaja.temp < baldeBaja.maximo){
-        baldeBaja.maximo = baldeBaja.temp;
-    }
+    if (baldeBaja.temp > baldeBaja.maximo) baldeBaja.maximo = baldeBaja.temp;
     baldeBaja.sumatoria += baldeBaja.temp;
     baldeBaja.cantidad++;
 
     ranuraBaja.temp = costoRanuraAux;
-    if (ranuraBaja.temp < ranuraBaja.maximo){
-        ranuraBaja.maximo = ranuraBaja.temp;
-    }
+    if (ranuraBaja.temp > ranuraBaja.maximo) ranuraBaja.maximo = ranuraBaja.temp;
     ranuraBaja.sumatoria += ranuraBaja.temp;
     ranuraBaja.cantidad++;
 
     if (resultado != 1) {
+        if (bajaManual){ printf("No se encontro el vendedor.\n");}
         return 0;
     }
 
     Vendedor v = balde.ranuras[pos.posicionRanura];
+    int confirmacion = 1;
 
-    int confirmacion = compararVendedor(v,v2);
-    if (confirmacion != 1) {
-        return 0;
+    if (bajaManual) {
+        printf("\nVENDEDOR ENCONTRADO CON EXITO\n");
+        mostrarVendedor(v);
+        printf("Si desea eliminarlo presione 1: ");
+        scanf("%d", &confirmacion);
+    } else {
+        confirmacion = compararVendedor(v, v2);
     }
 
-    // Realizar baja
-    v.dni = 0;
-    strcpy(v.nombre, "");
-    strcpy(v.telefono, "");
-    strcpy(v.tipoVenta, "");
-    v.valor = 0;
-    v.cantVendida = 0;
-    balde.ranuras[pos.posicionRanura] = v;
+    if (confirmacion != 1) {return 0;}
 
-    // Reescribir balde en disco
+    Vendedor vacio = {0, "", "", 0.0, 0, ""};
+    balde.ranuras[pos.posicionRanura] = vacio;
+
     FILE *f = fopen(ARCHIVO, "rb+");
     if (!f) return 0;
 
     fseek(f, sizeof(Balde) * pos.posicionBalde, SEEK_SET);
     fwrite(&balde, sizeof(Balde), 1, f);
     fclose(f);
+
+    if (bajaManual) { printf("\nVendedor eliminado correctamente.\n");}
     return 1;
 }
+
 
 void consultaBaldeContenedor() {
     int dni;
@@ -634,7 +589,7 @@ void analisisCostos() {
             if (cod == 1){
                 altaEnDisco(vAux);
             } else {
-                bajaEnDisco(vAux);
+                bajaEnDisco(vAux,0);
             }
         } else if (cod == 3) {
             fscanf(fp, "%d\n", dni);
@@ -661,6 +616,5 @@ int hashing(int dni){
     for (i = 0; i < longitud; i++){
         contador += ((int)x[i]) * (i + 1);
     }
-    printf("Hashing: %d\n",contador % M);
     return (contador % M);
 }
