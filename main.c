@@ -2,9 +2,41 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+/*
+PMI 2 - GRUPO 3
+INTEGRANTES:
+ Rio, Sofia
+ Montenegro, Juan Bautista
 
-// 210 / (6*39)  =  0,897...
-// Desperdicio: 40 bytes (4096−39×104 = 4096−4056 = 40 bytes)
+Tamaño de la nupla: 104 
+*N: 210
+*Baldes: 6
+*Ranuras x balde: 39 
+*Factor de carga = 210 / (6*39)  =  0,897...
+*Desperdicio: 40 bytes (4096−39×104 = 4096−4056 = 40)
+
+Conclusión: En base a los costos obtenidos en el siguiente cuadro comparativo,
+vemos que para las altas y bajas se consultan 2 baldes siempre, ya que primero debemos
+localizar el elemento (primer acceso) y despues, una vez modificado el balde, debemos volver
+a acceder al disco para escribir el balde modificado (segundo acceso).
+Tambien, se observa que las evocaciones cuestan 1 acceso a balde, por lo que en el archivo
+de operaciones usado, no hay colisiones en las busquedas. 
+Finalmente, las ranuras consultadas para cada operacion (alta, baja, evocar) son similares.
+
+##============================================================ ##
+##    OPERACIONES      |BALDES CONSULTADOS|RANURAS CONSULTADAS ##
+##============================================================ ##
+|| MAX. ALTA           |     2.000      |     33.000     ##
+|| MED. ALTA           |     2.000      |     16.000     ##
+|| MAX. BAJA           |     2.000      |     32.000     ##
+|| MED. BAJA           |     2.000      |     11.000     ##
+|| MAX. EVOC EXITOSA   |     1.000      |     32.000     ##
+|| MED. EVOC EXITOSA   |     1.000      |     9.000      ##
+|| MAX. EVOC NO EXITOSA|     1.000      |     33.000     ##
+|| MED. EVOC NO EXITOSA|     1.000      |     19.000     ##
+##============================================================##
+*/
+
 
 #define M 6  // Cantidad de baldes
 #define R 39   // Ranuras por balde
@@ -230,7 +262,7 @@ void mostrarEstructura() {
 }
 
 // --LOCALIZAR--
-// Retorna: 1 si existe, 0 si no existe, -1 si está lleno. Devuelve también el balde leído.
+// Retorna: 1 si existe, 0 si no existe, -1 si está lleno. Devuelve tambien el balde leído.
 Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
     FILE* f = fopen(ARCHIVO, "rb");
     if (!f) {
@@ -238,9 +270,9 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
         return (Posicion){-1, -1};
     }
 
-    baldeAlta.temp = baldeBaja.temp = baldeEvoc.temp = baldeEvocNE.temp = 0;
-    ranuraAlta.temp = ranuraBaja.temp = ranuraEvoc.temp = ranuraEvocNE.temp = 0;
-    costoBaldeAux = costoRanuraAux = 0;
+    baldeAlta.temp = 0; baldeBaja.temp = 0; baldeEvoc.temp = 0; baldeEvocNE.temp = 0;
+    ranuraAlta.temp = 0; ranuraBaja.temp = 0; ranuraEvoc.temp = 0; ranuraEvocNE.temp = 0;
+    costoBaldeAux = 0; costoRanuraAux = 0;
 
     int h = hashing(dni);
     int intentos = 0;
@@ -251,6 +283,7 @@ Posicion localizarEnDisco(int dni, int* exito, Balde* baldeOut) {
 
     while (intentos < M) {
         int baldeActual = (h + intentos) % M;
+
         costoBaldeAux++;
 
         fseek(f, baldeActual * (sizeof(Balde) + 40), SEEK_SET);
@@ -315,20 +348,6 @@ int altaEnDisco(Vendedor nuevo) {
     int resultado;
     Posicion pos = localizarEnDisco(nuevo.dni, &resultado, &balde);
 
-    baldeAlta.temp = costoBaldeAux;
-    if (baldeAlta.temp < baldeAlta.maximo){
-        baldeAlta.maximo = baldeAlta.temp;
-    }
-    baldeAlta.sumatoria += baldeAlta.temp;
-    baldeAlta.cantidad++;
-
-    ranuraAlta.temp = costoRanuraAux;
-    if (ranuraAlta.temp < ranuraAlta.maximo){
-        ranuraAlta.maximo = ranuraAlta.temp;
-    }
-    ranuraAlta.sumatoria += ranuraAlta.temp;
-    ranuraAlta.cantidad++;
-
     if (resultado != 0) return 0;  // ya existe o estructura llena
 
     balde.ranuras[pos.posicionRanura] = nuevo;
@@ -338,8 +357,24 @@ int altaEnDisco(Vendedor nuevo) {
 
     fseek(f, (sizeof(Balde) + 40) * pos.posicionBalde, SEEK_SET);
     fwrite(&balde, sizeof(Balde), 1, f);
-
     fclose(f);
+
+    costoBaldeAux++; // sumamos un acceso mas
+
+    baldeAlta.temp = costoBaldeAux;
+    if (baldeAlta.temp > baldeAlta.maximo){
+        baldeAlta.maximo = baldeAlta.temp;
+    }
+    baldeAlta.sumatoria += baldeAlta.temp;
+    baldeAlta.cantidad++;
+
+    ranuraAlta.temp = costoRanuraAux;
+    if (ranuraAlta.temp > ranuraAlta.maximo){
+        ranuraAlta.maximo = ranuraAlta.temp;
+    }
+    ranuraAlta.sumatoria += ranuraAlta.temp;
+    ranuraAlta.cantidad++;
+
     return 1;
 }
 
@@ -359,17 +394,6 @@ int bajaEnDisco(Vendedor v2, int bajaManual) {
     Balde balde;
     int resultado;
     Posicion pos = localizarEnDisco(v2.dni, &resultado, &balde);
-
-    // Costos (si aplica)
-    baldeBaja.temp = costoBaldeAux;
-    if (baldeBaja.temp > baldeBaja.maximo) baldeBaja.maximo = baldeBaja.temp;
-    baldeBaja.sumatoria += baldeBaja.temp;
-    baldeBaja.cantidad++;
-
-    ranuraBaja.temp = costoRanuraAux;
-    if (ranuraBaja.temp > ranuraBaja.maximo) ranuraBaja.maximo = ranuraBaja.temp;
-    ranuraBaja.sumatoria += ranuraBaja.temp;
-    ranuraBaja.cantidad++;
 
     if (resultado != 1) {
         if (bajaManual){ printf("No se encontro el vendedor.\n");}
@@ -399,6 +423,22 @@ int bajaEnDisco(Vendedor v2, int bajaManual) {
     fseek(f, (sizeof(Balde) + 40) * pos.posicionBalde, SEEK_SET);
     fwrite(&balde, sizeof(Balde), 1, f);
     fclose(f);
+
+    costoBaldeAux++; // un acceso mas para sobreescribir el balde
+
+    baldeBaja.temp = costoBaldeAux;
+    if (baldeBaja.temp > baldeBaja.maximo) {
+        baldeBaja.maximo = baldeBaja.temp;
+    }
+    baldeBaja.sumatoria += baldeBaja.temp;
+    baldeBaja.cantidad++;
+
+    ranuraBaja.temp = costoRanuraAux;
+    if (ranuraBaja.temp > ranuraBaja.maximo) {
+        ranuraBaja.maximo = ranuraBaja.temp;
+    }
+    ranuraBaja.sumatoria += ranuraBaja.temp;
+    ranuraBaja.cantidad++;
 
     if (bajaManual) { printf("\nVendedor eliminado correctamente.\n");}
     return 1;
@@ -454,14 +494,14 @@ Vendedor evocarEnDisco(int dniBuscado) {
     if (exito == 1) {
 
         baldeEvoc.temp = costoBaldeAux;
-        if (baldeEvoc.temp < baldeEvoc.maximo){
+        if (baldeEvoc.temp > baldeEvoc.maximo){
             baldeEvoc.maximo = baldeEvoc.temp;
         }
         baldeEvoc.sumatoria += baldeEvoc.temp;
         baldeEvoc.cantidad++;
 
         ranuraEvoc.temp = costoRanuraAux;
-        if (ranuraEvoc.temp < ranuraEvoc.maximo){
+        if (ranuraEvoc.temp > ranuraEvoc.maximo){
             ranuraEvoc.maximo = ranuraEvoc.temp;
         }
         ranuraEvoc.sumatoria += ranuraEvoc.temp;
@@ -471,19 +511,18 @@ Vendedor evocarEnDisco(int dniBuscado) {
     } else {
 
         baldeEvocNE.temp = costoBaldeAux;
-        if (baldeEvocNE.temp < baldeEvocNE.maximo){
+        if (baldeEvocNE.temp > baldeEvocNE.maximo){
             baldeEvocNE.maximo = baldeEvocNE.temp;
         }
         baldeEvocNE.sumatoria += baldeEvocNE.temp;
         baldeEvocNE.cantidad++;
 
         ranuraEvocNE.temp = costoRanuraAux;
-        if (ranuraEvocNE.temp < ranuraEvocNE.maximo){
+        if (ranuraEvocNE.temp > ranuraEvocNE.maximo){
             ranuraEvocNE.maximo = ranuraEvocNE.temp;
         }
         ranuraEvocNE.sumatoria += ranuraEvocNE.temp;
         ranuraEvocNE.cantidad++;
-
         return vacio; // no encontrado
     }
 }
@@ -526,15 +565,15 @@ void cuadroComp()
     printf("|| MED. ALTA           |     %.3f      |     %.3f     ##\n",
            (baldeAlta.cantidad != 0) ? baldeAlta.sumatoria/baldeAlta.cantidad : 0.0,
            (ranuraAlta.cantidad != 0) ? ranuraAlta.sumatoria/ranuraAlta.cantidad : 0.0);
-    printf("|| MAX. BAJA           |     %.3f      |     %.3f     ##\n", baldeBaja.maximo,ranuraBaja.maximo);
+    printf("|| MAX. BAJA           |     %.3f      |     %.3f     ##\n", (float)baldeBaja.maximo,(float)ranuraBaja.maximo);
     printf("|| MED. BAJA           |     %.3f      |     %.3f     ##\n",
            (baldeBaja.cantidad != 0) ? baldeBaja.sumatoria/baldeBaja.cantidad : 0.0,
            (ranuraBaja.cantidad != 0) ? ranuraBaja.sumatoria / ranuraBaja.cantidad : 0.0);
-    printf("|| MAX. EVOC EXITOSA   |     %.3f      |     %.3f     ##\n", baldeEvoc.maximo,ranuraEvoc.maximo);
+    printf("|| MAX. EVOC EXITOSA   |     %.3f      |     %.3f     ##\n", (float)baldeEvoc.maximo,(float)ranuraEvoc.maximo);
     printf("|| MED. EVOC EXITOSA   |     %.3f      |     %.3f     ##\n",
            (baldeEvoc.cantidad != 0) ? baldeEvoc.sumatoria / baldeEvoc.cantidad : 0.0,
            (ranuraEvoc.cantidad != 0) ? ranuraEvoc.sumatoria / ranuraEvoc.cantidad : 0.0);
-    printf("|| MAX. EVOC NO EXITOSA|     %.3f      |     %.3f     ##\n",baldeEvocNE.maximo, ranuraEvocNE.maximo);
+    printf("|| MAX. EVOC NO EXITOSA|     %.3f      |     %.3f     ##\n",(float)baldeEvocNE.maximo, (float)ranuraEvocNE.maximo);
     printf("|| MED. EVOC NO EXITOSA|     %.3f      |     %.3f     ##\n",
            (baldeEvocNE.cantidad != 0) ? baldeEvocNE.sumatoria / baldeEvocNE.cantidad : 0.0,
            (ranuraEvocNE.cantidad != 0) ? ranuraEvocNE.sumatoria / ranuraEvocNE.cantidad : 0.0);
@@ -587,7 +626,7 @@ void analisisCostos() {
                 bajaEnDisco(vAux,0);
             }
         } else if (cod == 3) {
-            fscanf(fp, "%d\n", dni);
+            fscanf(fp, "%d\n", &dni);
             evocarEnDisco(dni);
         } else {
             printf("Codigo de operacion no valido: %d\n", cod);
